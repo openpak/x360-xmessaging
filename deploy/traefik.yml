@@ -1,0 +1,14 @@
+# Merge into the primary's shared ~/openpak/deploy/traefik/dynamic.yml. The gateway forwards
+# Live service 18 here. Priority 45 beats the PathPrefix(`/xpnfront`) router (40) of x360-xpnfront.
+http:
+  routers:
+    x360-xmessaging-web:
+      entryPoints: [web]
+      rule: Path(`/xpnfront/xmessaging.srf`)
+      priority: 45
+      service: x360-xmessaging-http
+  services:
+    x360-xmessaging-http:
+      loadBalancer:
+        servers:
+        - url: http://10.89.2.209:10018

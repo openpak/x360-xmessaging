@@ -1,0 +1,30 @@
+# PRIMARY host. OpenPak Xbox 360 message inbox (x360-xmessaging): Live service 18 requests the
+# security gateway tunnels to the primary's Traefik. Identity headers are trusted only with the
+# gateway key. Port 10118 is the internal unread-count API for x360-xpnfront (not routed by Traefik).
+[Unit]
+Description=OpenPak Xbox 360 message inbox (x360-xmessaging)
+
+[Container]
+ContainerName=openpak-x360-xmessaging
+Image=ghcr.io/openpak/x360-xmessaging:latest
+AutoUpdate=registry
+Network=openpak.network
+IP=10.89.2.209
+Environment=X360_XMESSAGING_ADDR=:10018
+Environment=X360_XMESSAGING_INTERNAL_ADDR=:10118
+Environment=X360_XMESSAGING_STATE=/var/lib/x360-xmessaging/inbox.json
+EnvironmentFile=%h/openpak/deploy/x360-gateway-key.env
+# X360_XMESSAGING_INTERNAL_KEY, mode 0600, never committed.
+EnvironmentFile=%h/openpak/deploy/x360-xmessaging/internal.env
+EnvironmentFile=%h/openpak/deploy/x360-xuacs-internal.env
+Volume=%h/openpak/deploy/x360-xmessaging/state:/var/lib/x360-xmessaging:rw,Z
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+UserNS=keep-id:uid=100,gid=101
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
