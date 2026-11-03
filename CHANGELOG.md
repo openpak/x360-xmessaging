@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1 (2026-11-03)
+
+- Every request logs one stderr line, `http <method> <path> -> <status> <duration>ms` (x360-common v0.5.1 `httplog`): no query, headers, cookies, tokens or bodies; `/healthz` skipped.
+
 ## v0.2.0 (2026-11-03)
 
 - Inboxes move to Postgres (schema `x360_xmessaging` in database `x360`, one document per inbox,

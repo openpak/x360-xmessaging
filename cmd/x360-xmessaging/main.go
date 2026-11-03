@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/openpak/x360-common/httplog"
 	"github.com/openpak/x360-common/wire"
 	"github.com/openpak/x360-common/xuacsapi"
 	"github.com/openpak/x360-xmessaging/internal/xmessaging"
@@ -43,9 +44,9 @@ func main() {
 	h := &xmessaging.Handler{Store: store, Log: log,
 		IDs: &xuacsapi.Client{URL: os.Getenv("X360_XUACS_INTERNAL_URL"), Key: os.Getenv("X360_XUACS_INTERNAL_KEY")}}
 
-	srvs := []*http.Server{{Addr: env("X360_XMESSAGING_ADDR", ":10018"), Handler: wire.Guard(os.Getenv("X360_GATEWAY_KEY"), h), ReadHeaderTimeout: 10 * time.Second}}
+	srvs := []*http.Server{{Addr: env("X360_XMESSAGING_ADDR", ":10018"), Handler: httplog.Wrap(wire.Guard(os.Getenv("X360_GATEWAY_KEY"), h)), ReadHeaderTimeout: 10 * time.Second}}
 	if k := os.Getenv("X360_XMESSAGING_INTERNAL_KEY"); k != "" {
-		srvs = append(srvs, &http.Server{Addr: env("X360_XMESSAGING_INTERNAL_ADDR", ":10118"), Handler: h.Internal(k), ReadHeaderTimeout: 10 * time.Second})
+		srvs = append(srvs, &http.Server{Addr: env("X360_XMESSAGING_INTERNAL_ADDR", ":10118"), Handler: httplog.Wrap(h.Internal(k)), ReadHeaderTimeout: 10 * time.Second})
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
