@@ -13,6 +13,8 @@ IP=10.89.2.209
 Environment=X360_XMESSAGING_ADDR=:10018
 Environment=X360_XMESSAGING_INTERNAL_ADDR=:10118
 Environment=X360_XMESSAGING_STATE=/var/lib/x360-xmessaging/inbox.json
+# db.env defines X360_XMESSAGING_DATABASE_URL (Postgres, schema x360_xmessaging; required), mode 0600, never committed.
+EnvironmentFile=%h/openpak/deploy/x360-xmessaging/db.env
 EnvironmentFile=%h/openpak/deploy/x360-gateway-key.env
 # X360_XMESSAGING_INTERNAL_KEY, mode 0600, never committed.
 EnvironmentFile=%h/openpak/deploy/x360-xmessaging/internal.env

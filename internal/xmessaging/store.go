@@ -1,9 +1,15 @@
 package xmessaging
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
+	"strings"
 	"sync"
+	"time"
+
+	"github.com/openpak/x360-common/pgstate"
 )
 
 const maxInbox = 125 // native inbox cap, oldest dropped
@@ -28,27 +34,72 @@ type inbox struct {
 	Msgs []Msg  `json:"msgs"` // newest first
 }
 
-// Store keeps every user's inbox in one JSON file, saved atomically on each change.
+// Schema is the Postgres schema x360-xmessaging owns inside the x360 database.
+const Schema = "x360_xmessaging"
+
+// Store keeps every user's inbox in memory and writes the changed inbox as one
+// document (key "box/<xuid>") to Postgres on each change; a nil pg is memory
+// only (tests).
 type Store struct {
 	mu    sync.Mutex
-	path  string
+	pg    *pgstate.Store
 	Boxes map[string]*inbox `json:"boxes"` // key: 16 hex digits of the XUID
 }
 
-// Open loads path (empty: memory only).
-func Open(path string) (*Store, error) {
-	s := &Store{path: path, Boxes: map[string]*inbox{}}
-	if path == "" {
-		return s, nil
-	}
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return s, nil
-	}
+// NewMemoryStore is a store that forgets on exit (tests).
+func NewMemoryStore() *Store { return &Store{Boxes: map[string]*inbox{}} }
+
+// Open opens the Postgres store in schema and loads every inbox. When the
+// database holds no inbox yet and legacyFile (the old inbox.json) exists, it is
+// imported once and left in place. An empty dsn is an error.
+func Open(ctx context.Context, dsn, schema, legacyFile string) (*Store, error) {
+	pg, err := pgstate.Open(ctx, dsn, schema)
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(b, s); err != nil {
+	s := NewMemoryStore()
+	s.pg = pg
+	rows, err := pg.Pool().Query(ctx, `SELECT key, value FROM docs WHERE key LIKE 'box/%'`)
+	if err != nil {
+		pg.Close()
+		return nil, err
+	}
+	for rows.Next() {
+		var k string
+		var v []byte
+		var b inbox
+		if err = rows.Scan(&k, &v); err == nil {
+			err = json.Unmarshal(v, &b)
+		}
+		if err != nil {
+			break
+		}
+		s.Boxes[strings.TrimPrefix(k, "box/")] = &b
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err == nil && len(s.Boxes) == 0 && legacyFile != "" {
+		b, rerr := os.ReadFile(legacyFile)
+		switch {
+		case rerr == nil:
+			if err = json.Unmarshal(b, s); err == nil {
+				for k := range s.Boxes {
+					if err = s.saveBoxLocked(k); err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
+				slog.Info("imported inbox.json into Postgres", "inboxes", len(s.Boxes))
+			}
+		case !os.IsNotExist(rerr):
+			err = rerr
+		}
+	}
+	if err != nil {
+		pg.Close()
 		return nil, err
 	}
 	if s.Boxes == nil {
@@ -57,19 +108,20 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) saveLocked() error {
-	if s.path == "" {
+// Close releases the database pool.
+func (s *Store) Close() {
+	if s.pg != nil {
+		s.pg.Close()
+	}
+}
+
+func (s *Store) saveBoxLocked(k string) error {
+	if s.pg == nil {
 		return nil
 	}
-	b, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	tmp := s.path + ".new"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.pg.Save(ctx, "box/"+k, s.Boxes[k])
 }
 
 func key(xuid uint64) string { return hex16(xuid) }
@@ -112,7 +164,7 @@ func (s *Store) Add(xuid uint64, m Msg, now uint32) (bool, error) {
 	if len(b.Msgs) > maxInbox {
 		b.Msgs = b.Msgs[:maxInbox]
 	}
-	return true, s.saveLocked()
+	return true, s.saveBoxLocked(key(xuid))
 }
 
 // List returns a copy of the live messages, newest first.
@@ -133,7 +185,7 @@ func (s *Store) Update(xuid uint64, id uint32, now uint32, f func(*Msg)) (Msg, b
 		for i := range b.Msgs {
 			if b.Msgs[i].ID == id {
 				f(&b.Msgs[i])
-				return b.Msgs[i], true, s.saveLocked()
+				return b.Msgs[i], true, s.saveBoxLocked(key(xuid))
 			}
 		}
 	}
@@ -148,7 +200,7 @@ func (s *Store) Delete(xuid uint64, id uint32, now uint32) (bool, error) {
 		for i := range b.Msgs {
 			if b.Msgs[i].ID == id {
 				b.Msgs = append(b.Msgs[:i], b.Msgs[i+1:]...)
-				return true, s.saveLocked()
+				return true, s.saveBoxLocked(key(xuid))
 			}
 		}
 	}

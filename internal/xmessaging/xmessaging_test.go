@@ -28,7 +28,7 @@ func (ids) AccountByXUID(_ context.Context, x uint64) (string, bool, error) {
 }
 
 func newH(t *testing.T) *Handler {
-	st, _ := Open("")
+	st := NewMemoryStore()
 	// 2026-11-02 00:00 UTC = 752198400 s after 2003-01-01.
 	return &Handler{Store: st, IDs: ids{}, Now: func() time.Time { return time.Unix(752198400+epoch2003, 0) }}
 }

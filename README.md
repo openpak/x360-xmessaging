@@ -19,7 +19,7 @@ OpenPak's Xbox 360 message inbox (Live service 18, `xmessaging`).
 | `GET /internal/v1/unread?xuid=` (:10118) | | Unread count for presence |
 | `GET /healthz` | | Health probe |
 
-Identity headers are trusted only with `X360_GATEWAY_KEY`. State is one JSON file (`X360_XMESSAGING_STATE`).
+Identity headers are trusted only with `X360_GATEWAY_KEY`. State is in Postgres (`X360_XMESSAGING_DATABASE_URL`, schema `x360_xmessaging`; `X360_XMESSAGING_STATE` is only the old inbox.json, imported once).
 
 ## Run
 
