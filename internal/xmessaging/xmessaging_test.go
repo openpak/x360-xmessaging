@@ -171,3 +171,33 @@ func TestInternalUnread(t *testing.T) {
 	}
 	_ = http.StatusOK
 }
+
+func TestEraseDeletesInboxAndBlanksSent(t *testing.T) {
+	st := NewMemoryStore()
+	now := uint32(752198400)
+	st.Add(alice, Msg{Sender: bob, Tag: "Bob", Sent: now, Expire: 60, Subject: "hi"}, now)
+	st.Add(bob, Msg{Sender: alice, Tag: "Alice", Sent: now, Expire: 60, Subject: "yo"}, now)
+	st.Add(bob, Msg{Sender: 0x0009000000000003, Tag: "Carol", Sent: now, Expire: 60}, now)
+	n, err := st.Erase([]uint64{alice})
+	if err != nil || n != 2 { // alice's inbox + one message she sent
+		t.Fatalf("erase: %d %v", n, err)
+	}
+	if n, err := st.Erase([]uint64{alice}); err != nil || n != 0 {
+		t.Fatalf("second erase: %d %v", n, err)
+	}
+	if len(st.List(alice, now)) != 0 {
+		t.Fatal("inbox survived")
+	}
+	l := st.List(bob, now)
+	if len(l) != 2 {
+		t.Fatalf("bob's inbox: %+v", l)
+	}
+	for _, m := range l {
+		if m.Subject == "yo" && (m.Sender != 0 || m.Tag != "") {
+			t.Fatalf("sender kept: %+v", m)
+		}
+		if m.Tag == "Carol" && m.Sender == 0 {
+			t.Fatal("other sender blanked")
+		}
+	}
+}

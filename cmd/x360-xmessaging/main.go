@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/openpak/x360-common/erase"
 	"github.com/openpak/x360-common/httplog"
 	"github.com/openpak/x360-common/wire"
 	"github.com/openpak/x360-common/xuacsapi"
@@ -41,8 +42,8 @@ func main() {
 		log.Error("X360_XUACS_INTERNAL_URL and X360_XUACS_INTERNAL_KEY are required")
 		os.Exit(2)
 	}
-	h := &xmessaging.Handler{Store: store, Log: log,
-		IDs: &xuacsapi.Client{URL: os.Getenv("X360_XUACS_INTERNAL_URL"), Key: os.Getenv("X360_XUACS_INTERNAL_KEY")}}
+	ids := &xuacsapi.Client{URL: os.Getenv("X360_XUACS_INTERNAL_URL"), Key: os.Getenv("X360_XUACS_INTERNAL_KEY")}
+	h := &xmessaging.Handler{Store: store, Log: log, IDs: ids}
 
 	srvs := []*http.Server{{Addr: env("X360_XMESSAGING_ADDR", ":10018"), Handler: httplog.Wrap(wire.Guard(os.Getenv("X360_GATEWAY_KEY"), h)), ReadHeaderTimeout: 10 * time.Second}}
 	if k := os.Getenv("X360_XMESSAGING_INTERNAL_KEY"); k != "" {
@@ -50,6 +51,15 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Account erasure (card #120). xuacs still knows the account's XUIDs while
+	// the website finaliser runs; x360-xuacs is erased last.
+	erase.Serve(ctx, "x360-xmessaging", func(c context.Context, account string) (int, error) {
+		xs, err := ids.AccountXUIDs(c, account)
+		if err != nil {
+			return 0, err
+		}
+		return store.Erase(xs)
+	})
 	errc := make(chan error, len(srvs))
 	for _, s := range srvs {
 		log.Info("x360-xmessaging listening", "addr", s.Addr)

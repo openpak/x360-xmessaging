@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 (2026-11-04)
+
+- Account erasure (card #120). `DELETE /internal/accounts/{account_id}/data` with `Authorization: Bearer $ACCOUNT_ERASE_KEY` on a separate listener `ERASE_ADDR` (default `:9099`, container network only, never published; not served while the key is unset). Reply `{"service":"x360-xmessaging","rows":N}`; one `account erased` log line per erasure. The account's XUIDs come from x360-xuacs (`xuacsapi.AccountXUIDs`, existing `X360_XUACS_INTERNAL_URL`/`_KEY`). Deletes the account's inboxes; messages it sent that sit in other users' inboxes stay for the recipient with the sender XUID and gamertag blanked.
+
 ## v0.2.1 (2026-11-03)
 
 - Every request logs one stderr line, `http <method> <path> -> <status> <duration>ms` (x360-common v0.5.1 `httplog`): no query, headers, cookies, tokens or bodies; `/healthz` skipped.

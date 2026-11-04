@@ -217,3 +217,45 @@ func (s *Store) Unread(xuid uint64, now uint32) int {
 	}
 	return n
 }
+
+// Erase deletes the inboxes of xuids and blanks the sender id and gamertag of
+// messages they sent that sit in other users' inboxes (the recipient keeps the
+// message). Returns the inboxes deleted plus messages anonymised; idempotent.
+func (s *Store) Erase(xuids []uint64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	gone := map[uint64]bool{}
+	rows := 0
+	for _, x := range xuids {
+		gone[x] = true
+		k := key(x)
+		if _, ok := s.Boxes[k]; ok {
+			delete(s.Boxes, k)
+			rows++
+			if s.pg != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				_, err := s.pg.Pool().Exec(ctx, `DELETE FROM docs WHERE key=$1`, "box/"+k)
+				cancel()
+				if err != nil {
+					return 0, err
+				}
+			}
+		}
+	}
+	for k, b := range s.Boxes {
+		changed := false
+		for i := range b.Msgs {
+			if gone[b.Msgs[i].Sender] {
+				b.Msgs[i].Sender, b.Msgs[i].Tag = 0, ""
+				changed = true
+				rows++
+			}
+		}
+		if changed {
+			if err := s.saveBoxLocked(k); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return rows, nil
+}
